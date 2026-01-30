@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chord Detector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .start-btn {
+            background: #10b981;
+            color: white;
+        }
+
+        .start-btn:hover {
+            background: #059669;
+            transform: scale(1.05);
+        }
+
+        .stop-btn {
+            background: #ef4444;
+            color: white;
+        }
+
+        .stop-btn:hover {
+            background: #dc2626;
+            transform: scale(1.05);
+        }
+
+        .stop-btn:disabled, .start-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+
+        .upload-btn {
+            background: #3b82f6;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-btn:hover {
+            background: #2563eb;
+            transform: scale(1.05);
+        }
+
+        #fileInput {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .current-chord {
+            text-align: center;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .current-chord h2 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        .current-chord p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .chord-history {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .chord-history h3 {
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .chord-item {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chord-name {
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+
+        .chord-time {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .visualizer {
+            height: 100px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .visualizer canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .current-chord h2 {
+                font-size: 2em;
+            }
+
+            button {
+                font-size: 16px;
+                padding: 12px 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Chord Detector</h1>
+        
+        <div class="status" id="status">Ready to detect chords!</div>
+        
+        <div class="button-group">
+            <button class="start-btn" id="startBtn">🎤 Start Listening</button>
+            <button class="stop-btn" id="stopBtn" disabled>⏹️ Stop</button>
+            <label for="fileInput" class="upload-btn" style="display: block; text-align: center; cursor: pointer;">
+                📁 Upload Audio File
+            </label>
+            <input type="file" id="fileInput" accept="audio/*">
+        </div>
+
+        <div class="visualizer">
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <div class="current-chord">
+            <h2 id="currentChord">-</h2>
+            <p id="currentNotes">Waiting for audio...</p>
+        </div>
+
+        <div class="chord-history">
+            <h3>📝 Chord History</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        // Simple pitch detection and chord recognition
+        class ChordDetector {
+            constructor() {
+                this.audioContext = null;
+                this.analyser = null;
+                this.microphone = null;
+                this.isListening = false;
+                this.chordHistory = [];
+                this.lastChord = null;
+                this.lastChordTime = 0;
+                
+                // Musical note frequencies (A4 = 440 Hz)
+                this.noteFrequencies = {
+                    'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
+                    'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
+                    'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88
+                };
+                
+                // Common chord patterns (intervals from root)
+                this.chordPatterns = {
+                    'Major': [0, 4, 7],
+                    'Minor': [0, 3, 7],
+                    'Diminished': [0, 3, 6],
+                    'Augmented': [0, 4, 8],
+                    'Major 7': [0, 4, 7, 11],
+                    'Minor 7': [0, 3, 7, 10],
+                    'Dominant 7': [0, 4, 7, 10],
+                    'Sus2': [0, 2, 7],
+                    'Sus4': [0, 5, 7]
+                };
+            }
+
+            async startListening() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.microphone = this.audioContext.createMediaStreamSource(stream);
+                    
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 8192;
+                    this.analyser.smoothingTimeConstant = 0.8;
+                    
+                    this.microphone.connect(this.analyser);
+                    this.isListening = true;
+                    
+                    this.detectChords();
+                    this.visualize();
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                    return false;
+                }
+            }
+
+            stopListening() {
+                this.isListening = false;
+                if (this.microphone) {
+                    this.microphone.disconnect();
+                    this.microphone.mediaStream.getTracks().forEach(track => track.stop());
+                }
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
+            }
+
+            async loadAudioFile(file) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 8192;
+                    this.analyser.smoothingTimeConstant = 0.8;
+                    
+                    source.connect(this.analyser);
+                    this.analyser.connect(this.audioContext.destination);
+                    
+                    source.start(0);
+                    this.isListening = true;
+                    
+                    this.detectChords();
+                    this.visualize();
+                    
+                    source.onended = () => {
+                        this.stopListening();
+                        updateStatus('File analysis complete!');
+                        document.getElementById('stopBtn').disabled = true;
+                        document.getElementById('startBtn').disabled = false;
+                    };
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Error loading audio file:', error);
+                    return false;
+                }
+            }
+
+            detectChords() {
+                if (!this.isListening) return;
+
+                const bufferLength = this.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                this.analyser.getByteFrequencyData(dataArray);
+
+                // Detect peaks (notes being played)
+                const peaks = this.findPeaks(dataArray);
+                const notes = peaks.map(peak => this.frequencyToNote(peak));
+                
+                if (notes.length > 0) {
+                    const chord = this.identifyChord(notes);
+                    const now = Date.now();
+                    
+                    // Only update if chord changed and enough time has passed
+                    if (chord !== this.lastChord && (now - this.lastChordTime) > 500) {
+                        this.lastChord = chord;
+                        this.lastChordTime = now;
+                        this.addToHistory(chord, notes);
+                        updateCurrentChord(chord, notes);
+                    }
+                }
+
+                requestAnimationFrame(() => this.detectChords());
+            }
+
+            findPeaks(dataArray) {
+                const peaks = [];
+                const threshold = 100; // Minimum amplitude to consider
+                const sampleRate = this.audioContext.sampleRate;
+                const nyquist = sampleRate / 2;
+                const binWidth = nyquist / dataArray.length;
+
+                for (let i = 10; i < dataArray.length - 10; i++) {
+                    if (dataArray[i] > threshold &&
+                        dataArray[i] > dataArray[i - 1] &&
+                        dataArray[i] > dataArray[i + 1]) {
+                        const frequency = i * binWidth;
+                        if (frequency >= 80 && frequency <= 1200) {
+                            peaks.push(frequency);
+                        }
+                    }
+                }
+
+                return peaks.slice(0, 6); // Limit to 6 strongest peaks
+            }
+
+            frequencyToNote(frequency) {
+                const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                const A4 = 440;
+                const C0 = A4 * Math.pow(2, -4.75);
+                
+                const halfSteps = Math.round(12 * Math.log2(frequency / C0));
+                const octave = Math.floor(halfSteps / 12);
+                const note = noteNames[halfSteps % 12];
+                
+                return { note, octave, frequency };
+            }
+
+            identifyChord(detectedNotes) {
+                if (detectedNotes.length === 0) return 'No sound detected';
+                if (detectedNotes.length === 1) return detectedNotes[0].note;
+
+                // Get unique note names (ignore octaves)
+                const uniqueNotes = [...new Set(detectedNotes.map(n => n.note))];
+                
+                if (uniqueNotes.length === 1) return uniqueNotes[0];
+
+                // Try to match chord patterns
+                const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                
+                for (const root of uniqueNotes) {
+                    const rootIndex = noteNames.indexOf(root);
+                    
+                    for (const [chordType, pattern] of Object.entries(this.chordPatterns)) {
+                        const chordNotes = pattern.map(interval => 
+                            noteNames[(rootIndex + interval) % 12]
+                        );
+                        
+                        const matches = chordNotes.filter(note => uniqueNotes.includes(note));
+                        
+                        if (matches.length >= Math.min(3, chordNotes.length)) {
+                            return `${root} ${chordType}`;
+                        }
+                    }
+                }
+
+                return uniqueNotes.join(' + ');
+            }
+
+            addToHistory(chord, notes) {
+                const timestamp = new Date().toLocaleTimeString();
+                this.chordHistory.unshift({ chord, notes, timestamp });
+                
+                // Keep only last 20 entries
+                if (this.chordHistory.length > 20) {
+                    this.chordHistory.pop();
+                }
+                
+                updateHistory(this.chordHistory);
+            }
+
+            visualize() {
+                if (!this.isListening) return;
+
+                const canvas = document.getElementById('visualizer');
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+
+                const bufferLength = this.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                const draw = () => {
+                    if (!this.isListening) return;
+
+                    requestAnimationFrame(draw);
+                    this.analyser.getByteFrequencyData(dataArray);
+
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    const barWidth = (canvas.width / bufferLength) * 2.5;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        const barHeight = (dataArray[i] / 255) * canvas.height;
+                        
+                        const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                        gradient.addColorStop(0, '#10b981');
+                        gradient.addColorStop(1, '#3b82f6');
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                        x += barWidth + 1;
+                    }
+                };
+
+                draw();
+            }
+        }
+
+        // UI Management
+        const detector = new ChordDetector();
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const fileInput = document.getElementById('fileInput');
+
+        startBtn.addEventListener('click', async () => {
+            const success = await detector.startListening();
+            if (success) {
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                updateStatus('🎤 Listening... Play some music!');
+            } else {
+                updateStatus('❌ Could not access microphone. Please allow microphone access.');
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            detector.stopListening();
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            updateStatus('⏹️ Stopped listening');
+        });
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const success = await detector.loadAudioFile(file);
+                if (success) {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    updateStatus(`🎵 Analyzing ${file.name}...`);
+                } else {
+                    updateStatus('❌ Could not load audio file');
+                }
+            }
+        });
+
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+
+        function updateCurrentChord(chord, notes) {
+            document.getElementById('currentChord').textContent = chord;
+            const notesList = notes.map(n => `${n.note}${n.octave}`).join(', ');
+            document.getElementById('currentNotes').textContent = `Notes: ${notesList}`;
+        }
+
+        function updateHistory(history) {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = history.map(item => `
+                <div class="chord-item">
+                    <span class="chord-name">${item.chord}</span>
+                    <span class="chord-time">${item.timestamp}</span>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
